@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大宝抖音助手 - 图标生成工具</title>
+    <title>抖音助手 - 图标生成工具</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
@@ -88,12 +88,33 @@
             border-radius: 3px;
             color: #FE2C55;
         }
+
+        .source-preview {
+            margin: 20px auto;
+            max-width: 160px;
+        }
+
+        .source-preview img {
+            width: 128px;
+            height: 128px;
+            border-radius: 12px;
+            border: 2px solid #3A3C4A;
+        }
+
+        .loading {
+            color: #8A8B99;
+        }
     </style>
 </head>
 <body>
-    <h1>大宝抖音自动中控助手 - 图标生成工具</h1>
+    <h1>抖音自动中控助手 - 图标生成工具</h1>
+    <p class="loading" id="status">正在加载源图标 icons/tik-tok512.png ...</p>
+
+    <div class="source-preview">
+        <img id="sourcePreview" alt="源图标预览" hidden>
+    </div>
     
-    <div class="icon-container">
+    <div class="icon-container" hidden id="iconContainer">
         <div class="icon-item">
             <h3>16x16px (icon16.png)</h3>
             <canvas id="canvas16" width="16" height="16"></canvas>
@@ -119,6 +140,7 @@
     <div class="instructions">
         <h3>使用说明</h3>
         <ol>
+            <li>本工具从 <code>icons/tik-tok512.png</code>（512×512）缩放生成扩展所需图标</li>
             <li>点击上方的"下载"按钮下载三个尺寸的图标</li>
             <li>将下载的文件重命名为：
                 <ul>
@@ -133,25 +155,16 @@
     </div>
     
     <script>
+        const SOURCE_PATH = 'icons/tik-tok512.png';
+        let sourceImage = null;
+
         function drawIcon(canvasId, size) {
             const canvas = document.getElementById(canvasId);
             const ctx = canvas.getContext('2d');
-            
-            // 清除画布
             ctx.clearRect(0, 0, size, size);
-            
-            // 绘制红色圆形背景
-            ctx.beginPath();
-            ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-            ctx.fillStyle = '#FE2C55';
-            ctx.fill();
-            
-            // 绘制白色"宝"字
-            ctx.fillStyle = 'white';
-            ctx.font = `bold ${size * 0.6}px "Microsoft YaHei", "PingFang SC", sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('宝', size / 2, size / 2 + size * 0.05);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(sourceImage, 0, 0, size, size);
         }
         
         function downloadIcon(size) {
@@ -162,11 +175,22 @@
             link.click();
         }
         
-        // 初始化绘制所有图标
         window.onload = function() {
-            drawIcon('canvas16', 16);
-            drawIcon('canvas48', 48);
-            drawIcon('canvas128', 128);
+            sourceImage = new Image();
+            sourceImage.onload = function() {
+                document.getElementById('status').textContent = '源图标已加载，可预览并下载各尺寸图标';
+                const preview = document.getElementById('sourcePreview');
+                preview.src = SOURCE_PATH;
+                preview.hidden = false;
+                document.getElementById('iconContainer').hidden = false;
+                drawIcon('canvas16', 16);
+                drawIcon('canvas48', 48);
+                drawIcon('canvas128', 128);
+            };
+            sourceImage.onerror = function() {
+                document.getElementById('status').textContent = '无法加载源图标，请确认 icons/tik-tok512.png 存在';
+            };
+            sourceImage.src = SOURCE_PATH;
         };
     </script>
 </body>

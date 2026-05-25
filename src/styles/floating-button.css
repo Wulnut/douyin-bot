@@ -12,30 +12,35 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: transparent;
   border: none;
   box-shadow: var(--shadow-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
-  font-weight: bold;
-  color: white;
+  padding: 0;
+  overflow: hidden;
   z-index: 9998;
   transition: all var(--transition-normal);
   user-select: none;
 }
 
+.douyin-helper-floating-btn .btn-icon {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
 .douyin-helper-floating-btn:hover {
   transform: scale(1.1);
-  background: var(--color-accent-hover);
-  box-shadow: 0 6px 20px rgba(254, 44, 85, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 
 .douyin-helper-floating-btn:active {
   transform: scale(0.95);
-  background: var(--color-accent-active);
 }
 
 /* 状态指示器 */
@@ -47,7 +52,7 @@
   height: 12px;
   border-radius: 50%;
   background: var(--color-text-muted);
-  border: 2px solid var(--color-accent);
+  border: 2px solid rgba(0, 0, 0, 0.35);
   transition: background var(--transition-fast);
 }
 

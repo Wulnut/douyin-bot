@@ -127,7 +127,7 @@ class AntiDetection {
       console[method] = function(...args) {
         // 添加前缀以区分
         if (args.length > 0 && typeof args[0] === 'string') {
-          if (args[0].includes('[大宝抖音助手]')) {
+          if (args[0].includes('[抖音助手]')) {
             return originalConsole[method].apply(console, args);
           }
         }

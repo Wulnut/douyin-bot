@@ -84,7 +84,7 @@ class Sidebar {
       <div class="resize-handle"></div>
       
       <div class="sidebar-header">
-        <h3 class="title">大宝抖音助手</h3>
+        <h3 class="title">抖音助手</h3>
         <div class="header-actions">
           <button class="btn-collapse" title="折叠">‹</button>
           <button class="btn-close" title="关闭">×</button>

@@ -1,9 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "大宝抖音AI托评助手",
+  "name": "抖音AI托评助手",
   "version": "3.0.0",
-  "description": "抖音直播间AI智能评论、自动点赞工具，接入DeepSeek大模型，支持会员系统",
-  "author": "大宝",
+  "description": "抖音直播间AI智能评论、自动点赞工具，接入DeepSeek大模型",
   "homepage_url": "https://github.com/yourusername/douyin-auto-helper",
   "icons": {
     "16": "icons/icon16.png",
@@ -34,17 +33,13 @@
   ],
   "host_permissions": [
     "https://live.douyin.com/*",
-    "https://api.deepseek.com/*",
-    "https://*/*",
-    "http://*/*"
+    "https://api.deepseek.com/*"
   ],
   "web_accessible_resources": [
     {
       "resources": [
         "src/styles/*",
-        "icons/*",
-        "images/*",
-        "src/license.js"
+        "icons/*"
       ],
       "matches": [
         "https://live.douyin.com/*"

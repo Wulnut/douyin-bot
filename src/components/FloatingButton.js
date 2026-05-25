@@ -34,8 +34,9 @@ class FloatingButton {
     // 创建按钮元素
     this.element = document.createElement('button');
     this.element.className = `douyin-helper-floating-btn ${this.config.running ? 'running' : ''}`;
+    const iconUrl = chrome.runtime.getURL('icons/icon128.png');
     this.element.innerHTML = `
-      <span class="btn-text">宝</span>
+      <img class="btn-icon" src="${iconUrl}" alt="抖音助手" width="44" height="44">
       <span class="status-indicator"></span>
       <span class="tooltip">打开助手</span>
     `;
@@ -71,16 +72,15 @@ class FloatingButton {
         width: 56px;
         height: 56px;
         border-radius: 50%;
-        background: #FE2C55;
+        background: transparent;
         border: none;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 24px;
-        font-weight: bold;
-        color: white;
+        padding: 0;
+        overflow: hidden;
         z-index: 9998;
         transition: all 0.25s ease;
         user-select: none;
@@ -89,18 +89,19 @@ class FloatingButton {
       
       .douyin-helper-floating-btn:hover {
         transform: scale(1.1);
-        background: #FF4766;
-        box-shadow: 0 6px 20px rgba(254, 44, 85, 0.4);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
       }
       
       .douyin-helper-floating-btn:active {
         transform: scale(0.95);
-        background: #E6284D;
       }
       
-      .douyin-helper-floating-btn .btn-text {
-        font-size: 22px;
-        font-weight: 700;
+      .douyin-helper-floating-btn .btn-icon {
+        width: 44px;
+        height: 44px;
+        object-fit: contain;
+        border-radius: 50%;
+        pointer-events: none;
       }
       
       .douyin-helper-floating-btn .status-indicator {
@@ -111,7 +112,7 @@ class FloatingButton {
         height: 12px;
         border-radius: 50%;
         background: #5C5E6B;
-        border: 2px solid #FE2C55;
+        border: 2px solid rgba(0, 0, 0, 0.35);
         transition: background 0.15s ease;
       }
       

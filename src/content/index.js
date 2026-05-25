@@ -1,7 +1,7 @@
 /**
- * 大宝抖音AI托评助手 v2.2.0
+ * 抖音AI托评助手 v2.2.0
  * Content Script - 主入口文件
- * 功能：自动点赞 + AI智能评论（接入DeepSeek）+ 会员系统
+ * 功能：自动点赞 + AI智能评论（接入DeepSeek）
  */
 
 (function() {
@@ -15,7 +15,7 @@
         const result = await chrome.storage.local.get(key);
         return result[key];
       } catch (error) {
-        console.error('[大宝AI助手] Storage获取失败:', error);
+        console.error('[抖音助手] Storage获取失败:', error);
         return null;
       }
     }
@@ -24,7 +24,7 @@
         await chrome.storage.local.set({ [key]: value });
         return true;
       } catch (error) {
-        console.error('[大宝AI助手] Storage保存失败:', error);
+        console.error('[抖音助手] Storage保存失败:', error);
         return false;
       }
     }
@@ -53,12 +53,12 @@
         likeMaxPerMinute: 50,
         aiCommentEnabled: false,
         commentInterval: 90,
+        commentMode: 'ai', // 'ai' | 'wordbank'
+        wordBank: ['不错', '支持一下', '666', '主播加油'],
         aiPrompt: '请根据以下文字和图片内容，以一个真实准备购买的35-55岁买家人设风格生成一条15个字以内的抖音直播间弹幕，只输出弹幕内容本身，不要任何解释',
-        aiApiKey: 'sk-db818c2234504dd8a0723772aae6e420',
+        aiApiKey: '',
         sidebarWidth: 400,
-        sidebarCollapsed: false,
-        serverUrl: '',  // 会员服务器地址，例如 https://xxxxx.cpolar.cn
-        machineCode: '' // 本机唯一识别码（自动生成）
+        sidebarCollapsed: false
       };
     }
     static getDefaultStats() {
@@ -92,62 +92,6 @@
     static async getAll() { return await Storage.getLogs(); }
     static async clear() { await Storage.clearLogs(); this.emit('logs:cleared'); return true; }
     static emit(event, data) { window.dispatchEvent(new CustomEvent(`douyin-helper:${event}`, { detail: data })); }
-  }
-
-  // ==================== 机器码 & 会员服务 ====================
-
-  class MachineCode {
-    /**
-     * 生成稳定的浏览器唯一识别码
-     * 基于浏览器特征哈希，同一台电脑同一Chrome不变
-     */
-    static generate() {
-      const features = [
-        navigator.userAgent,
-        screen.width + 'x' + screen.height,
-        screen.colorDepth,
-        navigator.hardwareConcurrency || 4,
-        navigator.language,
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
-        navigator.platform || '',
-        screen.pixelDepth || 24
-      ].join('|');
-      // 简单哈希函数（不依赖外部库）
-      let hash = 0;
-      for (let i = 0; i < features.length; i++) {
-        const char = features.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // 转为32位整数
-      }
-      const h = Math.abs(hash).toString(16).padStart(8, '0').toUpperCase();
-      // 格式化为 XXXX-XXXX-XXXX-XXXX
-      const raw = (h + h + h + h).substring(0, 16);
-      return `${raw.slice(0,4)}-${raw.slice(4,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}`;
-    }
-    static async getOrCreate() {
-      // 优先从存储中读取，确保稳定性
-      const saved = await Storage.get('machineCode');
-      if (saved) return saved;
-      const code = this.generate();
-      await Storage.set('machineCode', code);
-      return code;
-    }
-  }
-
-  class MemberService {
-    static async checkStatus(serverUrl, machineCode) {
-      if (!serverUrl || !machineCode) return { isVip: false, expireFormatted: null };
-      try {
-        const url = `${serverUrl.replace(/\/$/, '')}/api/member/status?code=${encodeURIComponent(machineCode)}`;
-        const response = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(8000) });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const data = await response.json();
-        return { isVip: data.isVip || false, expireFormatted: data.expireFormatted || null, expireAt: data.expireAt || null };
-      } catch (err) {
-        console.warn('[大宝AI助手] 会员状态查询失败:', err.message);
-        return { isVip: false, expireFormatted: null, error: err.message };
-      }
-    }
   }
 
   // ==================== 核心功能模块 ====================
@@ -265,7 +209,7 @@
         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
         return dataUrl.split(',')[1];
       } catch (e) {
-        console.warn('[大宝AI助手] 截取视频帧失败:', e);
+        console.warn('[抖音助手] 截取视频帧失败:', e);
         return null;
       }
     }
@@ -522,6 +466,8 @@
       this.config = {
         enabled: config.enabled || false,
         interval: config.interval || 90,
+        commentMode: config.commentMode || 'ai',
+        wordBank: Array.isArray(config.wordBank) ? config.wordBank : [],
         aiPrompt: config.aiPrompt || '请根据以下文字和图片内容，以一个真实准备购买的35-55岁买家人设风格生成一条15个字以内的抖音直播间弹幕，只输出弹幕内容本身，不要任何解释',
         aiApiKey: config.aiApiKey || ''
       };
@@ -530,12 +476,35 @@
       this.deepseekClient = null;
       this.commentHistory = []; // 历史评论记录，用于避免重复
     }
+    isWordBankMode() { return this.config.commentMode === 'wordbank'; }
+    pickFromWordBank() {
+      const bank = (this.config.wordBank || []).filter(Boolean);
+      if (bank.length === 0) return '';
+      if (bank.length === 1) return bank[0];
+      let pick = bank[Math.floor(Math.random() * bank.length)];
+      let attempts = 0;
+      while (pick === this.state.lastComment && attempts < 5) {
+        pick = bank[Math.floor(Math.random() * bank.length)];
+        attempts++;
+      }
+      return pick;
+    }
     start() {
       if (this.state.isRunning || !this.config.enabled) return;
-      if (!this.config.aiApiKey) { Logger.add({ type: 'warning', source: 'ai', message: '未配置API Key' }); return; }
-      this.deepseekClient = new DeepSeekClient(this.config.aiApiKey);
+      if (this.isWordBankMode()) {
+        if (!this.config.wordBank || this.config.wordBank.length === 0) {
+          Logger.add({ type: 'warning', source: 'ai', message: '词库为空，请先配置并保存' });
+          return;
+        }
+      } else if (!this.config.aiApiKey) {
+        Logger.add({ type: 'warning', source: 'ai', message: '未配置API Key' });
+        return;
+      } else {
+        this.deepseekClient = new DeepSeekClient(this.config.aiApiKey);
+      }
       this.state.isRunning = true;
-      Logger.add({ type: 'info', source: 'ai', message: 'AI智能评论已启动', data: { interval: this.config.interval } });
+      const modeLabel = this.isWordBankMode() ? '词库随机评论' : 'AI智能评论';
+      Logger.add({ type: 'info', source: 'ai', message: `${modeLabel}已启动`, data: { interval: this.config.interval } });
       this.scheduleNextComment(true);
       this.emit('comment:started');
     }
@@ -560,12 +529,25 @@
         const variance = baseInterval * 0.2;
         nextInterval = Math.max(5000, baseInterval + (Math.random() - 0.5) * variance);
       }
-      Logger.add({ type: 'info', source: 'ai', message: `下次AI评论将在 ${Math.round(nextInterval / 1000)} 秒后生成` });
+      const actionLabel = this.isWordBankMode() ? '发送' : '生成';
+      Logger.add({ type: 'info', source: 'ai', message: `下次评论将在 ${Math.round(nextInterval / 1000)} 秒后${actionLabel}` });
       this.state.timerId = setTimeout(() => { this.generateAndSend(); }, nextInterval);
     }
     async generateAndSend() {
       if (this.state.isSending || this.state.isGenerating) {
-        Logger.add({ type: 'warning', source: 'ai', message: 'AI正在处理中，跳过本次' });
+        Logger.add({ type: 'warning', source: 'ai', message: '评论正在处理中，跳过本次' });
+        this.scheduleNextComment();
+        return;
+      }
+      if (this.isWordBankMode()) {
+        const comment = this.pickFromWordBank();
+        if (!comment) {
+          Logger.add({ type: 'warning', source: 'ai', message: '词库为空，无法发送' });
+          this.handleRetry();
+          return;
+        }
+        Logger.add({ type: 'success', source: 'ai', message: `词库抽取评论：「${comment}」` });
+        await this.sendComment(comment);
         this.scheduleNextComment();
         return;
       }
@@ -677,8 +659,11 @@
     delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
     updateConfig(config) {
       this.config = { ...this.config, ...config };
-      // 每次updateConfig都重新创建客户端，确保apiKey最新
-      this.deepseekClient = new DeepSeekClient(this.config.aiApiKey);
+      if (this.isWordBankMode()) {
+        this.deepseekClient = null;
+      } else if (this.config.aiApiKey) {
+        this.deepseekClient = new DeepSeekClient(this.config.aiApiKey);
+      }
       if (this.state.isRunning && !this.config.enabled) this.stop();
       else if (!this.state.isRunning && this.config.enabled) this.start();
     }
@@ -704,7 +689,8 @@
       this.shadow.appendChild(style);
       this.element = document.createElement('button');
       this.element.className = `douyin-helper-floating-btn ${this.config.running ? 'running' : ''}`;
-      this.element.innerHTML = '<span class="btn-text">宝</span><span class="status-indicator"></span><span class="tooltip">打开AI助手</span>';
+      const iconUrl = chrome.runtime.getURL('icons/icon128.png');
+      this.element.innerHTML = `<img class="btn-icon" src="${iconUrl}" alt="抖音助手" width="44" height="44"><span class="status-indicator"></span><span class="tooltip">打开AI助手</span>`;
       this.shadow.appendChild(this.element);
       if (document.body) document.body.appendChild(this.container);
       else setTimeout(() => { if (document.body) document.body.appendChild(this.container); }, 1000);
@@ -718,11 +704,11 @@
     }
     getStyles() {
       return `:host{position:fixed!important;z-index:2147483647!important;pointer-events:none!important}
-.douyin-helper-floating-btn{position:fixed;left:24px;bottom:24px;width:56px;height:56px;border-radius:50%;background:#FE2C55;border:none;box-shadow:0 4px 12px rgba(0,0,0,.4);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;color:white;z-index:2147483647;transition:all .25s ease;user-select:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif;pointer-events:auto!important}
-.douyin-helper-floating-btn:hover{transform:scale(1.1);background:#FF4766;box-shadow:0 6px 20px rgba(254,44,85,.4)}
-.douyin-helper-floating-btn:active{transform:scale(.95);background:#E6284D}
-.douyin-helper-floating-btn .btn-text{font-size:22px;font-weight:700}
-.douyin-helper-floating-btn .status-indicator{position:absolute;top:2px;right:2px;width:12px;height:12px;border-radius:50%;background:#5C5E6B;border:2px solid #FE2C55;transition:background .15s ease}
+.douyin-helper-floating-btn{position:fixed;left:24px;bottom:24px;width:56px;height:56px;border-radius:50%;background:transparent;border:none;box-shadow:0 4px 12px rgba(0,0,0,.4);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;overflow:hidden;z-index:2147483647;transition:all .25s ease;user-select:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif;pointer-events:auto!important}
+.douyin-helper-floating-btn:hover{transform:scale(1.1);box-shadow:0 6px 20px rgba(0,0,0,.45)}
+.douyin-helper-floating-btn:active{transform:scale(.95)}
+.douyin-helper-floating-btn .btn-icon{width:44px;height:44px;object-fit:contain;border-radius:50%;pointer-events:none}
+.douyin-helper-floating-btn .status-indicator{position:absolute;top:2px;right:2px;width:12px;height:12px;border-radius:50%;background:#5C5E6B;border:2px solid rgba(0,0,0,.35);transition:background .15s ease}
 .douyin-helper-floating-btn.running .status-indicator{background:#00C853;box-shadow:0 0 8px #00C853}
 .douyin-helper-floating-btn.running{animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(254,44,85,.4)}50%{box-shadow:0 0 0 8px rgba(254,44,85,0)}}
@@ -733,7 +719,7 @@
     bindEvents() {
       this.element.addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
-        if (this.config.onClick) { try { this.config.onClick(); } catch(err) { console.error('[大宝AI助手] FloatingButton点击错误:', err); } }
+        if (this.config.onClick) { try { this.config.onClick(); } catch(err) { console.error('[抖音助手] FloatingButton点击错误:', err); } }
       }, true);
     }
     show() { this.config.visible = true; this.element.classList.remove('hidden'); }
@@ -856,18 +842,12 @@
         <div class="resize-handle"></div>
         <div class="sidebar-header">
           <div class="title-area">
-            <h3 class="title">大宝抖音AI托评助手</h3>
+            <h3 class="title">抖音AI托评助手</h3>
             <span class="version-tag">v2.2.0</span>
           </div>
-          <div class="header-right">
-            <div class="member-avatar" id="member-avatar" title="点击查看会员信息">
-              <div class="avatar-icon">👤</div>
-              <div class="avatar-label" id="avatar-label">免费版</div>
-            </div>
-            <div class="header-actions">
-              <button class="btn-collapse" title="折叠">›</button>
-              <button class="btn-close" title="关闭">×</button>
-            </div>
+          <div class="header-actions">
+            <button class="btn-collapse" title="折叠">›</button>
+            <button class="btn-close" title="关闭">×</button>
           </div>
         </div>
         <div class="monitor-section">
@@ -913,9 +893,8 @@
           <div class="control-section ai-section">
             <div class="section-header">
               <span class="section-title">
-                <span class="section-icon">🤖</span>AI智能评论
+                <span class="section-icon">💬</span>自动评论
                 <span class="ai-badge">DeepSeek</span>
-                <span class="vip-lock" id="vip-lock" title="会员专属">🔒</span>
               </span>
               <label class="toggle-switch"><input type="checkbox" id="ai-comment-toggle"><span class="toggle-slider ai-slider"></span></label>
             </div>
@@ -925,11 +904,34 @@
                 <input type="number" id="comment-interval" min="10" max="3600" value="90">
               </div>
               <div class="control-group">
+                <label>评论模式</label>
+                <div class="comment-mode-row">
+                  <label class="mode-option"><input type="radio" name="comment-mode" id="comment-mode-ai" value="ai" checked> AI生成</label>
+                  <label class="mode-option"><input type="radio" name="comment-mode" id="comment-mode-wordbank" value="wordbank"> 词库随机</label>
+                </div>
+              </div>
+              <div id="ai-config-group">
+                <div class="control-group">
+                  <label class="ai-prompt-label">
+                    <span>DeepSeek API Key</span>
+                    <span class="label-hint">自行配置 API Key</span>
+                  </label>
+                  <input type="password" id="ai-api-key" class="api-key-input" placeholder="sk-..." autocomplete="off">
+                </div>
+                <div class="control-group">
+                  <label class="ai-prompt-label">
+                    <span>AI预设提示词</span>
+                    <span class="label-hint">可根据直播内容修改</span>
+                  </label>
+                  <textarea id="ai-prompt" class="ai-prompt-input" rows="4" placeholder="输入给AI的提示词，AI将根据直播标题、主播、弹幕和截图生成评论...">请根据以下文字和图片内容，以一个真实准备购买的35-55岁买家人设风格生成一条15个字以内的抖音直播间弹幕，只输出弹幕内容本身，不要任何解释</textarea>
+                </div>
+              </div>
+              <div class="control-group" id="wordbank-config-group" style="display:none;">
                 <label class="ai-prompt-label">
-                  <span>AI预设提示词</span>
-                  <span class="label-hint">可根据直播内容修改</span>
+                  <span>评论词库</span>
+                  <span class="label-hint">每行一条，发送时随机抽取</span>
                 </label>
-                <textarea id="ai-prompt" class="ai-prompt-input" rows="4" placeholder="输入给AI的提示词，AI将根据直播标题、主播、弹幕和截图生成评论...">请根据以下文字和图片内容，以一个真实准备购买的35-55岁买家人设风格生成一条15个字以内的抖音直播间弹幕，只输出弹幕内容本身，不要任何解释</textarea>
+                <textarea id="word-bank" class="ai-prompt-input" rows="6" placeholder="不错&#10;支持一下&#10;666&#10;主播加油"></textarea>
               </div>
               <div class="status-bar">
                 <span class="status-indicator" id="ai-comment-status">已停止</span>
@@ -952,12 +954,6 @@
             <div class="log-container" id="log-container">
               <div class="log-empty">暂无日志</div>
             </div>
-          </div>
-        </div>
-        <div class="server-config-section">
-          <div class="server-config-row">
-            <span class="server-config-label">🌐 服务器地址</span>
-            <input type="text" id="server-url" class="server-url-input" placeholder="https://xxxxx.cpolar.cn" autocomplete="off">
           </div>
         </div>
         <div class="sidebar-footer">
@@ -1012,43 +1008,29 @@
           background: var(--color-bg-primary); padding: 1px 5px; border-radius: 3px;
           border: 1px solid var(--color-border); white-space: nowrap; flex-shrink: 0;
         }
-        .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-        .member-avatar {
-          display: flex; flex-direction: column; align-items: center; gap: 1px;
-          cursor: pointer; padding: 4px 6px; border-radius: 8px;
-          border: 1px solid var(--color-border); background: var(--color-bg-primary);
-          transition: all .15s ease; min-width: 48px;
-        }
-        .member-avatar:hover { border-color: var(--color-ai); background: rgba(123,104,238,.1); }
-        .member-avatar.vip { border-color: rgba(255,193,7,.4); background: rgba(255,193,7,.08); }
-        .avatar-icon { font-size: 16px; line-height: 1; }
-        .avatar-label {
-          font-size: 9px; color: var(--color-text-muted); white-space: nowrap;
-          font-weight: 500; letter-spacing: 0.3px;
-        }
-        .member-avatar.vip .avatar-label { color: #FFC107; }
-        .header-actions { display: flex; gap: 4px; }
+        .header-actions { display: flex; gap: 4px; flex-shrink: 0; }
         .header-actions button {
           width: 28px; height: 28px; border: none; background: transparent;
           color: var(--color-text-secondary); border-radius: 6px; cursor: pointer;
           font-size: 16px; transition: all .15s ease;
         }
         .header-actions button:hover { background: var(--color-bg-primary); color: var(--color-text-primary); }
-        .vip-lock { font-size: 12px; cursor: pointer; }
-        .vip-lock.unlocked { display: none; }
-        .server-config-section {
-          background: var(--color-bg-secondary); border-top: 1px solid var(--color-border);
-          padding: 8px 16px; flex-shrink: 0;
+        .comment-mode-row { display: flex; gap: 12px; flex-wrap: wrap; }
+        .mode-option {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 12px; color: var(--color-text-primary); cursor: pointer;
         }
-        .server-config-row { display: flex; align-items: center; gap: 8px; }
-        .server-config-label { font-size: 11px; color: var(--color-text-muted); white-space: nowrap; }
-        .server-url-input {
-          flex: 1; background: var(--color-bg-primary); border: 1px solid var(--color-border);
-          color: var(--color-text-primary); border-radius: 5px; padding: 5px 8px;
-          font-size: 11px; outline: none; transition: border-color .15s;
+        .mode-option input { accent-color: var(--color-ai); }
+        .api-key-input {
+          background: var(--color-bg-primary); border: 1px solid rgba(123,104,238,.3);
+          color: var(--color-text-primary); border-radius: 6px; padding: 8px 10px;
+          font-size: 12px; width: 100%; box-sizing: border-box; outline: none;
+          transition: border-color .15s ease;
         }
-        .server-url-input:focus { border-color: var(--color-ai); }
-        .server-url-input::placeholder { color: var(--color-text-muted); font-size: 10px; }
+        .api-key-input:focus { border-color: var(--color-ai); box-shadow: 0 0 0 2px rgba(123,104,238,.15); }
+        .api-key-input::placeholder { color: var(--color-text-muted); font-size: 11px; }
+        #ai-config-group { display: flex; flex-direction: column; }
+        #ai-config-group > .control-group + .control-group { margin-top: 16px; }
         .monitor-section {
           background: linear-gradient(135deg, rgba(254,44,85,.1) 0%, rgba(37,39,51,.8) 100%);
           border-bottom: 1px solid var(--color-border);
@@ -1203,13 +1185,11 @@
       this.element.querySelector('.btn-close').addEventListener('click', () => { this.stopMonitoring(); this.hide(); });
       this.element.querySelector('#like-toggle').addEventListener('change', (e) => { if (this.onToggleLike) this.onToggleLike(e.target.checked); });
       this.element.querySelector('#ai-comment-toggle').addEventListener('change', (e) => { if (this.onToggleAIComment) this.onToggleAIComment(e.target.checked); });
+      this.element.querySelector('#comment-mode-ai').addEventListener('change', () => this.updateCommentModeUI());
+      this.element.querySelector('#comment-mode-wordbank').addEventListener('change', () => this.updateCommentModeUI());
       this.element.querySelector('#btn-save').addEventListener('click', () => { if (this.onSave) this.onSave(this.getConfig()); });
       this.element.querySelector('#btn-reset').addEventListener('click', () => { if (this.onReset) this.onReset(); });
       this.element.querySelector('#btn-clear-logs').addEventListener('click', () => this.clearLogs());
-      // 头像点击事件：弹出会员信息弹窗
-      this.element.querySelector('#member-avatar').addEventListener('click', () => {
-        if (this.onMemberAvatarClick) this.onMemberAvatarClick();
-      });
       // 修复：阻止输入框的键盘事件冒泡到直播间，避免触发快捷键
       const stopKeyPropagation = (e) => {
         e.stopPropagation();
@@ -1251,15 +1231,20 @@
       const likeMax = parseInt(this.element.querySelector('#like-max').value) || 50;
       const commentInterval = parseInt(this.element.querySelector('#comment-interval').value) || 90;
       const aiPrompt = this.element.querySelector('#ai-prompt').value.trim();
-      const serverUrl = (this.element.querySelector('#server-url').value || '').trim();
+      const aiApiKey = (this.element.querySelector('#ai-api-key').value || '').trim();
+      const commentMode = this.element.querySelector('#comment-mode-wordbank').checked ? 'wordbank' : 'ai';
+      const wordBank = (this.element.querySelector('#word-bank').value || '')
+        .split('\n').map(s => s.trim()).filter(Boolean);
       return {
         likeEnabled: this.element.querySelector('#like-toggle').checked,
         likeMinPerMinute: Math.min(likeMin, likeMax),
         likeMaxPerMinute: Math.max(likeMin, likeMax),
         aiCommentEnabled: this.element.querySelector('#ai-comment-toggle').checked,
         commentInterval,
+        commentMode,
+        wordBank,
         aiPrompt,
-        serverUrl,
+        aiApiKey,
         sidebarWidth: this.config.width,
         sidebarCollapsed: this.config.collapsed
       };
@@ -1269,22 +1254,24 @@
       if (config.likeMaxPerMinute !== undefined) this.element.querySelector('#like-max').value = Math.max(20, config.likeMaxPerMinute);
       if (config.commentInterval !== undefined) this.element.querySelector('#comment-interval').value = config.commentInterval;
       if (config.aiPrompt) this.element.querySelector('#ai-prompt').value = config.aiPrompt;
-      if (config.serverUrl !== undefined) this.element.querySelector('#server-url').value = config.serverUrl || '';
-    }
-    updateMemberStatus(isVip, expireFormatted, machineCode) {
-      const avatarEl = this.element.querySelector('#member-avatar');
-      const labelEl = this.element.querySelector('#avatar-label');
-      const lockEl = this.element.querySelector('#vip-lock');
-      if (!avatarEl || !labelEl) return;
-      if (isVip) {
-        avatarEl.classList.add('vip');
-        labelEl.textContent = expireFormatted ? `VIP至${expireFormatted}` : 'VIP会员';
-        if (lockEl) lockEl.classList.add('unlocked');
+      if (config.aiApiKey !== undefined) this.element.querySelector('#ai-api-key').value = config.aiApiKey || '';
+      if (config.commentMode === 'wordbank') {
+        this.element.querySelector('#comment-mode-wordbank').checked = true;
       } else {
-        avatarEl.classList.remove('vip');
-        labelEl.textContent = '免费版';
-        if (lockEl) lockEl.classList.remove('unlocked');
+        this.element.querySelector('#comment-mode-ai').checked = true;
       }
+      if (config.wordBank !== undefined) {
+        const lines = Array.isArray(config.wordBank) ? config.wordBank : [];
+        this.element.querySelector('#word-bank').value = lines.join('\n');
+      }
+      this.updateCommentModeUI();
+    }
+    updateCommentModeUI() {
+      const isWordBank = this.element.querySelector('#comment-mode-wordbank').checked;
+      const aiGroup = this.element.querySelector('#ai-config-group');
+      const wordBankGroup = this.element.querySelector('#wordbank-config-group');
+      if (aiGroup) aiGroup.style.display = isWordBank ? 'none' : '';
+      if (wordBankGroup) wordBankGroup.style.display = isWordBank ? 'block' : 'none';
     }
     updateLikeStatus(running, count) {
       const statusEl = this.element.querySelector('#like-status');
@@ -1295,7 +1282,11 @@
     updateCommentStatus(running, count, lastComment) {
       const statusEl = this.element.querySelector('#ai-comment-status');
       const countEl = this.element.querySelector('#comment-count');
-      if (statusEl) { statusEl.textContent = running ? 'AI运行中' : '已停止'; statusEl.className = `status-indicator ${running ? 'ai-running' : ''}`; }
+      const isWordBank = this.element.querySelector('#comment-mode-wordbank') && this.element.querySelector('#comment-mode-wordbank').checked;
+      if (statusEl) {
+        statusEl.textContent = running ? (isWordBank ? '词库运行中' : 'AI运行中') : '已停止';
+        statusEl.className = `status-indicator ${running ? 'ai-running' : ''}`;
+      }
       if (countEl && count !== undefined) countEl.textContent = `已发送 ${count} 条`;
       if (lastComment) {
         const lastBar = this.element.querySelector('#last-comment-bar');
@@ -1332,7 +1323,7 @@
 
   // ==================== 主程序 ====================
 
-  if (window.douyinHelperLoaded) { console.log('[大宝AI助手] 已经加载，跳过'); return; }
+  if (window.douyinHelperLoaded) { console.log('[抖音助手] 已经加载，跳过'); return; }
   window.douyinHelperLoaded = true;
 
   AntiDetection.init();
@@ -1345,14 +1336,14 @@
   window.DouyinHelperState = { totalLikes: 0, totalComments: 0 };
 
   async function init() {
-    console.log('[大宝AI助手] 开始初始化...');
+    console.log('[抖音助手] 开始初始化...');
     try {
       await loadConfig();
       createFloatingButton();
       loadLogs();
-      console.log('[大宝AI助手] 初始化完成 ✓');
+      console.log('[抖音助手] 初始化完成 ✓');
     } catch (error) {
-      console.error('[大宝AI助手] 初始化失败:', error);
+      console.error('[抖音助手] 初始化失败:', error);
     }
   }
 
@@ -1367,7 +1358,7 @@
   }
 
   async function loadLogs() {
-    try { const logs = await Storage.getLogs(); console.log(`[大宝AI助手] 加载 ${logs.length} 条历史日志`); } catch(e) {}
+    try { const logs = await Storage.getLogs(); console.log(`[抖音助手] 加载 ${logs.length} 条历史日志`); } catch(e) {}
   }
 
   function createFloatingButton() {
@@ -1385,8 +1376,6 @@
     state.sidebar.onToggleAIComment = (enabled) => handleAICommentToggle(enabled);
     state.sidebar.onSave = async (config) => { await saveConfig(config); Logger.add({ type: 'success', source: 'system', message: '配置已保存' }); };
     state.sidebar.onReset = async () => { state.sidebar.setConfig(Storage.getDefaultConfig()); Logger.add({ type: 'info', source: 'system', message: '已重置为默认配置' }); };
-    // 头像点击：弹出会员信息弹窗
-    state.sidebar.onMemberAvatarClick = () => showMemberModal();
     state.sidebar.create();
     state.sidebar.setConfig(state.config);
     const likeToggle = state.sidebar.element.querySelector('#like-toggle');
@@ -1396,9 +1385,7 @@
     if (state.floatingBtn) state.floatingBtn.hide();
     window.addEventListener('douyin-helper:log:added', (e) => { if (state.sidebar) state.sidebar.addLog(e.detail); });
     window.addEventListener('douyin-helper:ai:generating', () => { if (state.sidebar) state.sidebar.setAIGenerating(true); });
-    // 初始化会员状态
-    refreshMemberStatus();
-    console.log('[大宝AI助手] 侧边栏创建完成 ✓');
+    console.log('[抖音助手] 侧边栏创建完成 ✓');
   }
 
   function toggleSidebar() {
@@ -1431,31 +1418,37 @@
   function handleAICommentToggle(enabled) {
     state.config.aiCommentEnabled = enabled;
     if (enabled) {
-      // 会员权限检查：非 VIP 用户无法使用 AI 评论
-      if (!state.memberStatus || !state.memberStatus.isVip) {
-        // 关闭开关
-        if (state.sidebar) {
-          const toggle = state.sidebar.element.querySelector('#ai-comment-toggle');
-          if (toggle) toggle.checked = false;
-        }
-        state.config.aiCommentEnabled = false;
-        // 显示浮动提示
-        showVipToast();
-        return;
-      }
       let currentConfig = state.config;
       if (state.sidebar) { const uiConfig = state.sidebar.getConfig(); currentConfig = { ...state.config, ...uiConfig }; state.config = currentConfig; }
-      if (!currentConfig.aiApiKey) {
+      const commentMode = currentConfig.commentMode || 'ai';
+      if (commentMode === 'wordbank') {
+        const wordBank = Array.isArray(currentConfig.wordBank) ? currentConfig.wordBank.filter(Boolean) : [];
+        if (wordBank.length === 0) {
+          Logger.add({ type: 'warning', source: 'ai', message: '词库为空，请先配置词库并保存' });
+          if (state.sidebar) state.sidebar.element.querySelector('#ai-comment-toggle').checked = false;
+          state.config.aiCommentEnabled = false;
+          return;
+        }
+        currentConfig.wordBank = wordBank;
+      } else if (!currentConfig.aiApiKey) {
         Logger.add({ type: 'warning', source: 'ai', message: 'API Key未配置，请保存配置后重试' });
         if (state.sidebar) state.sidebar.element.querySelector('#ai-comment-toggle').checked = false;
         state.config.aiCommentEnabled = false;
         return;
       }
+      const commentConfig = {
+        enabled: true,
+        interval: currentConfig.commentInterval,
+        commentMode,
+        wordBank: currentConfig.wordBank || [],
+        aiPrompt: currentConfig.aiPrompt,
+        aiApiKey: currentConfig.aiApiKey
+      };
       if (!state.aiAutoComment) {
-        state.aiAutoComment = new AIAutoComment({ enabled: true, interval: currentConfig.commentInterval, aiPrompt: currentConfig.aiPrompt, aiApiKey: currentConfig.aiApiKey });
+        state.aiAutoComment = new AIAutoComment(commentConfig);
         state.aiAutoComment.start();
       } else {
-        state.aiAutoComment.updateConfig({ enabled: true, interval: currentConfig.commentInterval, aiPrompt: currentConfig.aiPrompt, aiApiKey: currentConfig.aiApiKey });
+        state.aiAutoComment.updateConfig(commentConfig);
       }
       window.addEventListener('douyin-helper:comment:success', handleCommentSuccess);
       if (state.sidebar) state.sidebar.updateCommentStatus(true, state.totalComments);
@@ -1487,188 +1480,9 @@
     state.floatingBtn.setRunning(state.config.likeEnabled || state.config.aiCommentEnabled);
   }
 
-  // ==================== 会员系统函数 ====================
-
-  function showVipToast() {
-    // 在侧边栏内显示浮动提示，定位在AI智能评论区块下方
-    const shadowRoot = state.sidebar && state.sidebar.shadowRoot;
-    if (!shadowRoot) return;
-
-    // 找到 AI 智能评论区块（.ai-section）
-    const aiSection = shadowRoot.querySelector('.ai-section');
-
-    // 移除旧的 toast（如果存在）
-    const oldToast = shadowRoot.querySelector('#vip-toast');
-    if (oldToast) oldToast.remove();
-
-    // 确保 ai-section 有 position:relative 以便子元素绝对定位
-    if (aiSection) {
-      aiSection.style.position = 'relative';
-    }
-
-    const toast = document.createElement('div');
-    toast.id = 'vip-toast';
-    toast.style.cssText = `
-      position: absolute; top: 100%; left: 0; right: 0;
-      margin-top: 6px;
-      background: linear-gradient(90deg,#FE2C55,#7B68EE);
-      color: white; padding: 10px 14px; border-radius: 8px;
-      font-size: 12px; font-weight: 500; z-index: 99999;
-      box-shadow: 0 4px 20px rgba(254,44,85,.4);
-      text-align: center; pointer-events: none;
-      animation: fadeInDown .3s ease;
-    `;
-
-    // 注入动画样式（只注入一次）
-    if (!shadowRoot.querySelector('#vip-toast-style')) {
-      const style = document.createElement('style');
-      style.id = 'vip-toast-style';
-      style.textContent = '@keyframes fadeInDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}';
-      shadowRoot.appendChild(style);
-    }
-
-    // 将 toast 插入 ai-section 内部（作为最后一个子元素）
-    if (aiSection) {
-      aiSection.appendChild(toast);
-    } else {
-      // 降级：插入 shadowRoot
-      shadowRoot.appendChild(toast);
-    }
-
-    toast.textContent = '🔒 AI智能评论为会员专属，请点击右上角头像升级会员';
-    clearTimeout(state._vipToastTimer);
-    state._vipToastTimer = setTimeout(() => { toast.remove(); }, 3500);
-  }
-
-  async function refreshMemberStatus() {
-    try {
-      const machineCode = await MachineCode.getOrCreate();
-      state.machineCode = machineCode;
-      const serverUrl = state.config.serverUrl || '';
-      const memberStatus = await MemberService.checkStatus(serverUrl, machineCode);
-      state.memberStatus = memberStatus;
-      if (state.sidebar) {
-        // 格式化到期日期：显示年月日
-        let expireLabel = null;
-        if (memberStatus.isVip && memberStatus.expireAt) {
-          const d = new Date(memberStatus.expireAt);
-          expireLabel = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
-        }
-        state.sidebar.updateMemberStatus(memberStatus.isVip, expireLabel, machineCode);
-      }
-    } catch (e) {
-      console.warn('[大宝AI助手] 会员状态初始化失败:', e);
-      state.memberStatus = { isVip: false };
-    }
-  }
-
-  function showMemberModal() {
-    // 在 Shadow DOM 内创建会员信息弹窗
-    const shadowRoot = state.sidebar && state.sidebar.shadowRoot;
-    if (!shadowRoot) return;
-    const existing = shadowRoot.querySelector('#member-modal-overlay');
-    if (existing) { existing.remove(); return; }
-
-    const machineCode = state.machineCode || '生成中...';
-    const isVip = state.memberStatus && state.memberStatus.isVip;
-    let expireLabel = '未开通';
-    if (isVip && state.memberStatus.expireAt) {
-      const d = new Date(state.memberStatus.expireAt);
-      expireLabel = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
-    }
-
-    // 导入微信二维码图片（base64内嵌）
-    const qrSrc = chrome.runtime.getURL('images/wechat_qr.png');
-
-    const overlay = document.createElement('div');
-    overlay.id = 'member-modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99998;display:flex;align-items:center;justify-content:center;';
-    overlay.innerHTML = `
-      <div style="background:#1e2130;border:1px solid #3A3C4A;border-radius:16px;padding:24px;width:320px;max-height:90vh;overflow-y:auto;position:relative;">
-        <button id="modal-close" style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:#8A8B99;font-size:20px;cursor:pointer;line-height:1;">×</button>
-        <h3 style="font-size:16px;font-weight:700;background:linear-gradient(90deg,#FE2C55,#7B68EE);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin:0 0 16px;">大宝抖音AI托评助手</h3>
-        <div style="background:#0f1117;border-radius:10px;padding:14px;margin-bottom:14px;">
-          <div style="font-size:11px;color:#64748b;margin-bottom:6px;">本机唯一识别码</div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span id="modal-code" style="font-family:'Courier New',monospace;font-size:13px;color:#e2e8f0;letter-spacing:1px;flex:1;">${machineCode}</span>
-            <button id="copy-code-btn" style="background:#252733;border:1px solid #3A3C4A;color:#8A8B99;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap;">复制</button>
-          </div>
-        </div>
-        <div style="background:${isVip ? 'rgba(255,193,7,.08)' : 'rgba(123,104,238,.08)'};border:1px solid ${isVip ? 'rgba(255,193,7,.3)' : 'rgba(123,104,238,.3)'};border-radius:10px;padding:12px;margin-bottom:14px;text-align:center;">
-          <div style="font-size:12px;color:#8A8B99;margin-bottom:4px;">当前状态</div>
-          <div style="font-size:16px;font-weight:700;color:${isVip ? '#FFC107' : '#7B68EE'}">${isVip ? '⭐ VIP会员' : '免费版'}</div>
-          ${isVip ? `<div style="font-size:11px;color:#FFC107;margin-top:4px;">到期：${expireLabel}</div>` : '<div style="font-size:11px;color:#64748b;margin-top:4px;">AI智能评论功能需升级会员</div>'}
-        </div>
-        ${!isVip ? `
-        <div style="margin-bottom:14px;">
-          <div style="font-size:12px;color:#8A8B99;margin-bottom:8px;text-align:center;">选择套餐</div>
-          <div style="display:grid;gap:8px;">
-            <div style="background:#252733;border:1px solid #3A3C4A;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:13px;color:#e2e8f0;">1个月</span>
-              <span style="font-size:15px;font-weight:700;color:#FE2C55;">¥99</span>
-            </div>
-            <div style="background:#252733;border:1px solid #3A3C4A;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:13px;color:#e2e8f0;">1个季度</span>
-              <span style="font-size:15px;font-weight:700;color:#FE2C55;">¥199</span>
-            </div>
-            <div style="background:linear-gradient(90deg,rgba(254,44,85,.15),rgba(123,104,238,.15));border:1px solid rgba(123,104,238,.3);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:13px;color:#e2e8f0;">1年 <span style="font-size:10px;color:#7B68EE;">推荐</span></span>
-              <span style="font-size:15px;font-weight:700;color:#FE2C55;">¥699</span>
-            </div>
-          </div>
-        </div>
-        <div style="text-align:center;margin-bottom:12px;">
-          <div style="font-size:12px;color:#8A8B99;margin-bottom:8px;">扫码加微信，发送识别码和套餐即可开通</div>
-          <img src="${qrSrc}" style="width:160px;height:160px;border-radius:8px;border:2px solid #3A3C4A;" onerror="this.style.display='none'">
-        </div>
-        ` : ''}
-        <div style="display:flex;gap:8px;">
-          <button id="refresh-member-btn" style="flex:1;padding:10px;background:#252733;border:1px solid #3A3C4A;color:#e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">🔄 刷新会员状态</button>
-          <button id="modal-close2" style="flex:1;padding:10px;background:linear-gradient(90deg,#FE2C55,#7B68EE);border:none;color:white;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;">确定</button>
-        </div>
-      </div>
-    `;
-    shadowRoot.appendChild(overlay);
-    // 事件绑定
-    shadowRoot.querySelector('#modal-close').addEventListener('click', () => overlay.remove());
-    shadowRoot.querySelector('#modal-close2').addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-    const copyBtn = shadowRoot.querySelector('#copy-code-btn');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(machineCode).then(() => {
-          copyBtn.textContent = '已复制✓';
-          copyBtn.style.color = '#00C853';
-          setTimeout(() => { copyBtn.textContent = '复制'; copyBtn.style.color = ''; }, 2000);
-        }).catch(() => {
-          // 备用方案
-          const el = document.createElement('textarea');
-          el.value = machineCode;
-          document.body.appendChild(el);
-          el.select();
-          document.execCommand('copy');
-          document.body.removeChild(el);
-          copyBtn.textContent = '已复制✓';
-          setTimeout(() => { copyBtn.textContent = '复制'; }, 2000);
-        });
-      });
-    }
-    const refreshBtn = shadowRoot.querySelector('#refresh-member-btn');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', async () => {
-        refreshBtn.textContent = '查询中...';
-        refreshBtn.disabled = true;
-        await refreshMemberStatus();
-        overlay.remove();
-        // 延迟后重新打开弹窗显示最新状态
-        setTimeout(() => showMemberModal(), 200);
-      });
-    }
-  }
-
   async function saveConfig(config) {
     state.config = { ...state.config, ...config };
-    try { await Storage.setConfig(state.config); } catch(e) { console.error('[大宝AI助手] 保存配置失败:', e); }
+    try { await Storage.setConfig(state.config); } catch(e) { console.error('[抖音助手] 保存配置失败:', e); }
   }
 
   async function saveStats() {
@@ -1691,6 +1505,6 @@
     }
   };
 
-  console.log('[大宝AI助手] v2.2.0 初始化完成，调试接口：DouyinHelper.toggle()');
+  console.log('[抖音助手] v2.2.0 初始化完成，调试接口：DouyinHelper.toggle()');
 
 })();
