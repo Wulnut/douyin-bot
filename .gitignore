@@ -1,2 +1,6 @@
 .serena
 .cursor
+node_modules/
+dist/
+release/
+build/key.pem
