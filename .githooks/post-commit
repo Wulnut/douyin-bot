@@ -1,10 +1,5 @@
 #!/bin/sh
 
+# Cannot amend the same commit to embed its own hash (hash changes on each amend).
+# Update working tree only; the file is included in the next commit via prepare-commit-msg.
 node scripts/write-version-info.mjs || exit 1
-git add src/version.json
-
-if git diff --cached --quiet -- src/version.json; then
-  exit 0
-fi
-
-git commit --amend --no-edit --no-verify

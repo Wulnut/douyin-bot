@@ -7,4 +7,4 @@ fi
 
 node scripts/bump-version.mjs || exit 1
 
-git add manifest.json package.json package-lock.json README.md src/content/index.js
+git add manifest.json package.json package-lock.json README.md src/content/index.js src/version.json

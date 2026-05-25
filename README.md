@@ -168,9 +168,9 @@ npm run version:bump # 手动 patch 版本 +1（一般无需手动执行）
 每次 `git commit` 时：
 
 1. **patch 版本 +1**（如 `3.0.0` → `3.0.1`），同步更新 `manifest.json`、`package.json`、`README.md` 等
-2. **提交完成后**自动写入 `src/version.json`，记录当前 commit 短哈希与完整哈希，并 amend 进同一提交
+2. **提交完成后**自动更新工作区中的 `src/version.json`（记录当前 commit 哈希；加载未打包扩展时即时生效，下次提交会纳入仓库）
 
-侧边栏版本标签显示格式：`v3.0.1 · 963692b`（鼠标悬停可查看完整 commit hash）。`npm run build` / `npm run pack` 时也会在终端输出该信息。
+侧边栏版本标签显示格式：`v3.0.1 · 148f194`（鼠标悬停可查看完整 commit hash）。`npm run build` / `npm run pack` 时也会在终端输出该信息。
 
 `git commit --amend` 不会再次 bump 版本；跳过 hooks 使用 `git commit --no-verify`。
 
