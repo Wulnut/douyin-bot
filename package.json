@@ -1,9 +1,11 @@
 {
   "name": "douyin-auto-helper",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "private": true,
   "description": "抖音直播间 AI 智能评论 Chrome 扩展",
   "scripts": {
+    "prepare": "node scripts/setup-git-hooks.mjs",
+    "version:bump": "node scripts/bump-version.mjs",
     "build": "node scripts/build.mjs",
     "pack": "node scripts/pack.mjs",
     "release": "npm run build && npm run pack"

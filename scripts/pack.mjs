@@ -38,6 +38,12 @@ function ensureSigningKey() {
 console.log('Packing extension...');
 ensureSigningKey();
 
+const versionInfoPath = path.join(distDir, 'src', 'version.json');
+if (fs.existsSync(versionInfoPath)) {
+  const versionInfo = JSON.parse(fs.readFileSync(versionInfoPath, 'utf8'));
+  console.log(`  Version: v${versionInfo.version} · ${versionInfo.commit}`);
+}
+
 await crx3([manifestPath], {
   keyPath,
   crxPath,

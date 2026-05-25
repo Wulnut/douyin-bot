@@ -1,8 +1,8 @@
-# 抖音AI托评助手 v3.0.0
+# 抖音AI托评助手 v3.0.1
 
 > Chrome 扩展 | 抖音直播间 AI 智能评论 + 自动点赞工具
 
-[![Version](https://img.shields.io/badge/版本-v3.0.0-red)](https://github.com/xxx139139-boop/dabao)
+[![Version](https://img.shields.io/badge/版本-v3.0.1-red)](https://github.com/xxx139139-boop/dabao)
 [![Platform](https://img.shields.io/badge/平台-Chrome-blue)](https://github.com/xxx139139-boop/dabao)
 
 **抖音AI托评助手**是一款专为抖音直播间设计的 Chrome 浏览器扩展，支持 AI 智能评论、词库随机评论与自动点赞，帮助提升直播间互动效率。
@@ -120,9 +120,14 @@ douyin-auto-helper/
 ├── scripts/                   # 混淆与 CRX 打包脚本
 │   ├── build.mjs              # 构建到 dist/
 │   ├── pack.mjs               # 打包 .crx
+│   ├── bump-version.mjs       # 版本号 patch +1
+│   ├── write-version-info.mjs # 写入版本号与 commit hash
+│   ├── setup-git-hooks.mjs    # 启用 Git hooks
 │   └── obfuscator-config.mjs  # javascript-obfuscator 配置
+├── .githooks/                 # Git hooks（提交时 bump 版本、写入 hash）
 ├── src/
 │   ├── background.js          # Service Worker（DeepSeek API 代理，绕过 CORS）
+│   ├── version.json           # 版本号 + 最后一次 commit hash（自动生成）
 │   ├── content/
 │   │   └── index.js           # 主脚本（功能集成入口）
 │   ├── components/
@@ -151,11 +156,23 @@ douyin-auto-helper/
 ### 命令
 
 ```bash
-npm install          # 首次安装依赖
+npm install          # 首次安装依赖（同时启用 Git hooks）
 npm run build        # 混淆并输出到 dist/
 npm run pack         # 将 dist/ 打包为 .crx
 npm run release      # 一步完成 build + pack
+npm run version:bump # 手动 patch 版本 +1（一般无需手动执行）
 ```
+
+### 版本号与提交哈希
+
+每次 `git commit` 时：
+
+1. **patch 版本 +1**（如 `3.0.0` → `3.0.1`），同步更新 `manifest.json`、`package.json`、`README.md` 等
+2. **提交完成后**自动写入 `src/version.json`，记录当前 commit 短哈希与完整哈希，并 amend 进同一提交
+
+侧边栏版本标签显示格式：`v3.0.1 · 963692b`（鼠标悬停可查看完整 commit hash）。`npm run build` / `npm run pack` 时也会在终端输出该信息。
+
+`git commit --amend` 不会再次 bump 版本；跳过 hooks 使用 `git commit --no-verify`。
 
 ### 输出文件
 

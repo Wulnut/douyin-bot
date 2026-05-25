@@ -1,11 +1,27 @@
 /**
- * 抖音AI托评助手 v2.2.0
+ * 抖音AI托评助手 v3.0.1
  * Content Script - 主入口文件
  * 功能：自动点赞 + AI智能评论（接入DeepSeek）
  */
 
 (function() {
   'use strict';
+
+  async function fetchVersionInfo() {
+    try {
+      const response = await fetch(chrome.runtime.getURL('src/version.json'));
+      if (!response.ok) throw new Error('version.json not found');
+      return await response.json();
+    } catch {
+      const manifest = chrome.runtime.getManifest();
+      return { version: manifest.version, commit: 'unknown', commitFull: 'unknown' };
+    }
+  }
+
+  function formatVersionLabel(info) {
+    const commit = info.commit && info.commit !== 'unknown' ? ` · ${info.commit}` : '';
+    return `v${info.version}${commit}`;
+  }
 
   // ==================== 工具类模块 ====================
 
@@ -775,8 +791,17 @@
       }, true);
       this.bindEvents();
       this.startMonitoring();
+      this.loadVersionInfo();
       setTimeout(() => { this.element.classList.add('animate-fadeInLeft'); }, 10);
       return this;
+    }
+    async loadVersionInfo() {
+      const info = await fetchVersionInfo();
+      const tag = this.element.querySelector('#version-tag');
+      if (!tag) return info;
+      tag.textContent = formatVersionLabel(info);
+      tag.title = `commit: ${info.commitFull || info.commit}`;
+      return info;
     }
     startMonitoring() {
       this.monitorState.startTime = Date.now();
@@ -843,7 +868,7 @@
         <div class="sidebar-header">
           <div class="title-area">
             <h3 class="title">抖音AI托评助手</h3>
-            <span class="version-tag">v2.2.0</span>
+            <span class="version-tag" id="version-tag">...</span>
           </div>
           <div class="header-actions">
             <button class="btn-collapse" title="折叠">›</button>
@@ -1341,7 +1366,8 @@
       await loadConfig();
       createFloatingButton();
       loadLogs();
-      console.log('[抖音助手] 初始化完成 ✓');
+      const versionInfo = await fetchVersionInfo();
+      console.log(`[抖音助手] ${formatVersionLabel(versionInfo)} 初始化完成，调试接口：DouyinHelper.toggle()`);
     } catch (error) {
       console.error('[抖音助手] 初始化失败:', error);
     }
@@ -1504,7 +1530,5 @@
       location.reload();
     }
   };
-
-  console.log('[抖音助手] v2.2.0 初始化完成，调试接口：DouyinHelper.toggle()');
 
 })();

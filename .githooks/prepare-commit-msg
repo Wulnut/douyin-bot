@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Skip version bump when amending an existing commit.
+if [ "$2" = "commit" ] && [ -n "$3" ]; then
+  exit 0
+fi
+
+node scripts/bump-version.mjs || exit 1
+
+git add manifest.json package.json package-lock.json README.md src/content/index.js

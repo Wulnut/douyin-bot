@@ -16,7 +16,8 @@ const jsTargets = [
 const copyTargets = [
   'manifest.json',
   'icons',
-  'src/styles'
+  'src/styles',
+  'src/version.json'
 ];
 
 function removeDir(dir) {
@@ -62,6 +63,9 @@ function formatSize(bytes) {
 console.log('Cleaning dist/...');
 removeDir(distDir);
 fs.mkdirSync(distDir, { recursive: true });
+
+console.log('Writing version info...');
+await import('./write-version-info.mjs');
 
 console.log('Copying static assets...');
 for (const target of copyTargets) {
