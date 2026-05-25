@@ -1,8 +1,8 @@
-# 抖音AI托评助手 v3.0.3
+# 抖音AI托评助手 v3.0.4
 
 > Chrome 扩展 | 抖音直播间 AI 智能评论 + 自动点赞工具
 
-[![Version](https://img.shields.io/badge/版本-v3.0.3-red)](https://github.com/xxx139139-boop/dabao)
+[![Version](https://img.shields.io/badge/版本-v3.0.4-red)](https://github.com/xxx139139-boop/dabao)
 [![Platform](https://img.shields.io/badge/平台-Chrome-blue)](https://github.com/xxx139139-boop/dabao)
 
 **抖音AI托评助手**是一款专为抖音直播间设计的 Chrome 浏览器扩展，支持 AI 智能评论、词库随机评论与自动点赞，帮助提升直播间互动效率。
