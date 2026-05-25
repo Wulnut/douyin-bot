@@ -1,0 +1,10 @@
+#!/bin/sh
+
+if [ -f .git/skip-version-bump ]; then
+  rm -f .git/skip-version-bump
+  exit 0
+fi
+
+node scripts/bump-version.mjs || exit 1
+
+git add manifest.json package.json package-lock.json README.md src/content/index.js src/version.json

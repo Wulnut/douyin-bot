@@ -1,10 +1,6 @@
 #!/bin/sh
 
-# Skip version bump when amending an existing commit.
+# Mark amend commits so pre-commit skips version bump.
 if [ "$2" = "commit" ] && [ -n "$3" ]; then
-  exit 0
+  touch .git/skip-version-bump
 fi
-
-node scripts/bump-version.mjs || exit 1
-
-git add manifest.json package.json package-lock.json README.md src/content/index.js src/version.json
